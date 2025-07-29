@@ -28,13 +28,14 @@ print_header() {
 }
 
 # Configuration
-RESOURCE_GROUP_NAME="dt-series-tfstate-rg"
+RESOURCE_GROUP_NAME="dt-series-terraform-state-rg"
 LOCATION="East US"
 
-# Storage account names (must be globally unique)
-STORAGE_ACCOUNT_DEV="dtseriestfstatedev$(date +%s | tail -c 5)"
-STORAGE_ACCOUNT_STAGING="dtseriestfstatestaging$(date +%s | tail -c 5)"
-STORAGE_ACCOUNT_PROD="dtseriestfstateprod$(date +%s | tail -c 5)"
+# Storage account names (must be globally unique and ≤24 chars)
+RANDOM_SUFFIX=$(date +%s | tail -c 5)
+STORAGE_ACCOUNT_DEV="dtstatedev${RANDOM_SUFFIX}"
+STORAGE_ACCOUNT_STAGING="dtstagestg${RANDOM_SUFFIX}"
+STORAGE_ACCOUNT_PROD="dtstateprd${RANDOM_SUFFIX}"
 
 CONTAINER_NAME="tfstate"
 
