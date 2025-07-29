@@ -1,0 +1,66 @@
+name: 'Cleanup Environment'
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to destroy'
+        required: true
+        default: 'dev'
+  schedule:
+    # Runs at 2 AM UTC every day to clean up the dev environment
+    - cron: '0 2 * * *'
+
+env:
+  ARM_USE_OIDC: true
+  ARM_USE_CLI: false
+  # Default to dev for the scheduled run
+  ENVIRONMENT: 'dev'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  destroy:
+    name: 'Destroy Infrastructure'
+    runs-on: ubuntu-latest
+    # Set environment from the manual trigger input, otherwise use the default 'dev'
+    env:
+      ENVIRONMENT: ${{ github.event.inputs.environment || 'dev' }}
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Azure Login via OIDC
+      uses: azure/login@v1
+      with:
+        client-id: ${{ secrets.AZURE_CLIENT_ID }}
+        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.5.7
+
+    - name: Copy environment configuration
+      run: |
+        echo "Destroying environment: ${{ env.ENVIRONMENT }}"
+        cp environments/${{ env.ENVIRONMENT }}/terraform.tfvars provisioning/
+        cp environments/${{ env.ENVIRONMENT }}/backend.tf provisioning/
+
+    - name: Terraform Init
+      run: cd provisioning && terraform init
+      env:
+        ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+
+    - name: Terraform Destroy
+      run: cd provisioning && terraform apply -destroy -auto-approve -var-file=terraform.tfvars
+      env:
+        ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
