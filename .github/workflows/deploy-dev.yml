@@ -92,6 +92,12 @@ jobs:
         cd provisioning
         echo "vm_ip=$(terraform output -raw public_ip_address)" >> $GITHUB_OUTPUT
         echo "vm_name=$(terraform output -raw vm_name)" >> $GITHUB_OUTPUT
+      env:
+        ARM_USE_OIDC: true
+        ARM_USE_CLI: false
+        ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
 
     # Ansible Deploy
     - name: Create Ansible inventory
