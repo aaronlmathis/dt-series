@@ -1,16 +1,16 @@
 ---
 - name: Update all packages
-  apt:
+  ansible.builtin.apt:
     upgrade: dist
-    update_cache: yes
-    autoremove: yes
-    autoclean: yes
+    update_cache: true
+    autoremove: true
+    autoclean: true
   register: update_result
   retries: 3
   delay: 10
 
 - name: Install essential security packages
-  apt:
+  ansible.builtin.apt:
     name:
       - unattended-upgrades
       - apt-listchanges
@@ -25,17 +25,17 @@
     state: present
 
 - name: Configure automatic security updates
-  copy:
+  ansible.builtin.copy:
     dest: /etc/apt/apt.conf.d/20auto-upgrades
     content: |
       APT::Periodic::Update-Package-Lists "1";
       APT::Periodic::Unattended-Upgrade "1";
       APT::Periodic::AutocleanInterval "7";
     mode: '0644'
-    backup: yes
+    backup: true
 
 - name: Configure unattended upgrades
-  copy:
+  ansible.builtin.copy:
     dest: /etc/apt/apt.conf.d/50unattended-upgrades
     content: |
       Unattended-Upgrade::Allowed-Origins {
@@ -48,25 +48,25 @@
       Unattended-Upgrade::Remove-Unused-Dependencies "true";
       Unattended-Upgrade::Automatic-Reboot "false";
     mode: '0644'
-    backup: yes
+    backup: true
 
 - name: Set kernel parameters for security
-  sysctl:
+  ansible.posix.sysctl:
     name: "{{ item.name }}"
     value: "{{ item.value }}"
     state: present
-    sysctl_set: yes
-    reload: yes
+    sysctl_set: true
+    reload: true
   loop: "{{ kernel_parameters }}"
   when: kernel_parameters is defined
 
 - name: Disable IPv6 if configured
-  sysctl:
+  ansible.posix.sysctl:
     name: "{{ item }}"
     value: 1
     state: present
-    sysctl_set: yes
-    reload: yes
+    sysctl_set: true
+    reload: true
   loop:
     - net.ipv6.conf.all.disable_ipv6
     - net.ipv6.conf.default.disable_ipv6
@@ -74,22 +74,22 @@
   when: disable_ipv6 | default(false)
 
 - name: Remove unnecessary packages
-  apt:
+  ansible.builtin.apt:
     name:
       - telnet
       - rsh-client
       - rsh-redone-client
     state: absent
-    autoremove: yes
+    autoremove: true
 
 - name: Ensure rsyslog is running
-  systemd:
+  ansible.builtin.systemd:
     name: rsyslog
     state: started
-    enabled: yes
+    enabled: true
 
 - name: Configure log rotation
-  copy:
+  ansible.builtin.copy:
     dest: /etc/logrotate.d/custom
     content: |
       /var/log/*.log {
