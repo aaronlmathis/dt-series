@@ -1,42 +1,43 @@
 ---
 - name: Add Microsoft GPG key
-  apt_key:
+  ansible.builtin.apt_key:
     url: https://packages.microsoft.com/keys/microsoft.asc
     state: present
   when: azure_monitor_enabled | default(false)
 
 - name: Add Microsoft Azure CLI repository
-  apt_repository:
+  ansible.builtin.apt_repository:
     repo: "deb [arch=amd64] https://packages.microsoft.com/repos/azure-cli/ {{ ansible_distribution_release }} main"
     state: present
-    update_cache: yes
+    update_cache: true
   when: azure_monitor_enabled | default(false)
 
 - name: Install Azure Monitor Agent (alternative method)
-  apt:
-    name: 
+  ansible.builtin.apt:
+    name:
       - azure-cli
     state: present
-    update_cache: yes
+    update_cache: true
   when: azure_monitor_enabled | default(false)
 
 - name: Download Azure Monitor Agent installer script
-  get_url:
+  ansible.builtin.get_url:
     url: "https://raw.githubusercontent.com/microsoft/OMS-Agent-for-Linux/master/installer/scripts/onboard_agent.sh"
     dest: /tmp/onboard_agent.sh
     mode: '0755'
   when: azure_monitor_enabled | default(false)
-  ignore_errors: yes
+  failed_when: false
 
 - name: Install Azure Monitor Agent via script (if available)
-  command: /tmp/onboard_agent.sh -w YOUR_WORKSPACE_ID -s YOUR_SHARED_KEY
-  when: 
+  ansible.builtin.command: /tmp/onboard_agent.sh -w YOUR_WORKSPACE_ID -s YOUR_SHARED_KEY
+  when:
     - azure_monitor_enabled | default(false)
     - false  # Disabled until workspace credentials are provided
-  ignore_errors: yes
+  failed_when: false
+  changed_when: false
 
 - name: Install basic monitoring tools instead
-  apt:
+  ansible.builtin.apt:
     name:
       - sysstat
       - iotop
@@ -47,26 +48,26 @@
     state: present
 
 - name: Configure sysstat
-  lineinfile:
+  ansible.builtin.lineinfile:
     path: /etc/default/sysstat
     regexp: '^ENABLED='
     line: 'ENABLED="true"'
-    backup: yes
-  notify: restart sysstat
+    backup: true
+  notify: Restart sysstat
 
 - name: Start and enable sysstat
-  systemd:
+  ansible.builtin.systemd:
     name: sysstat
     state: started
-    enabled: yes
+    enabled: true
 
 - name: Create basic monitoring script
-  copy:
+  ansible.builtin.copy:
     dest: /usr/local/bin/system-monitor.sh
     content: |
       #!/bin/bash
       # Basic system monitoring script
-      echo "=== System Monitor Report ===" 
+      echo "=== System Monitor Report ==="
       echo "Date: $(date)"
       echo "Uptime: $(uptime)"
       echo "Load Average: $(cat /proc/loadavg)"
@@ -81,13 +82,13 @@
     mode: '0755'
 
 - name: Schedule basic monitoring
-  cron:
+  ansible.builtin.cron:
     name: "system monitor"
     minute: "*/15"
     job: "/usr/local/bin/system-monitor.sh >> /var/log/system-monitor.log 2>&1"
 
 - name: Clean up downloaded files
-  file:
+  ansible.builtin.file:
     path: "{{ item }}"
     state: absent
   loop:
