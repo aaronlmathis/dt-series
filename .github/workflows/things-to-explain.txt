@@ -1,3 +1,7 @@
 Gotta update ssh public key variable for gha...
 # Change the ssh_public_key_path reference to:
 public_key = file("keys/id_rsa.pub")
+
+Remove resrouce group from article 1... manually create it so terraform doesn't manage it.
+
+azure_vms configs to all
