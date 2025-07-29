@@ -1,0 +1,53 @@
+---
+- name: Configure Azure VM for Production Deployment
+  hosts: azure_vms
+  become: yes
+  gather_facts: yes
+  
+  pre_tasks:
+    - name: Update package cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      tags: [system, updates]
+
+  roles:
+    - role: system-hardening
+      tags: [system, security, hardening]
+    
+    - role: firewall
+      tags: [security, firewall]
+    
+    - role: ssh-hardening
+      tags: [security, ssh]
+    
+    - role: fail2ban
+      tags: [security, fail2ban]
+    
+    - role: time-sync
+      tags: [system, time]
+    
+    
+    - role: azure-monitor
+      tags: [monitoring, azure]
+    
+    - role: cron-jobs
+      tags: [system, cron, backup]
+
+  post_tasks:
+    - name: Verify all services are running
+      service:
+        name: "{{ item }}"
+        state: started
+        enabled: yes
+      loop:
+        - fail2ban
+        - chrony
+      tags: [verification]
+
+    - name: Display deployment summary
+      debug:
+        msg:
+          - "Deployment completed successfully!"
+          - "SSH Port: {{ ssh_port }}"
+      tags: [summary]

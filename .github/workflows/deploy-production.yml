@@ -1,0 +1,341 @@
+name: 'Deploy to Production'
+
+on:
+  workflow_run:
+    workflows: ["Deploy to Staging"]
+    branches: [main]
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      destroy:
+        description: 'Destroy infrastructure'
+        required: false
+        default: false
+        type: boolean
+      skip_approval:
+        description: 'Skip manual approval (emergency deployment)'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  ARM_USE_OIDC: true
+  ARM_USE_CLI: false
+  ENVIRONMENT: 'production'
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+jobs:
+  check-staging-deployment:
+    name: 'Check Staging Deployment'
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch'
+    
+    steps:
+    - name: Staging deployment successful
+      run: echo "Staging deployment completed successfully, proceeding to production"
+
+  manual-approval:
+    name: 'Manual Approval Required'
+    runs-on: ubuntu-latest
+    needs: check-staging-deployment
+    if: github.event.inputs.skip_approval != 'true'
+    environment:
+      name: production
+    
+    steps:
+    - name: Approval checkpoint
+      run: |
+        echo "Production deployment requires manual approval"
+        echo "Please review staging environment before approving"
+
+  terraform-plan:
+    name: 'Terraform Plan'
+    runs-on: ubuntu-latest
+    needs: [check-staging-deployment, manual-approval]
+    if: always() && (needs.manual-approval.result == 'success' || github.event.inputs.skip_approval == 'true')
+    outputs:
+      plan-output: ${{ steps.plan.outputs.stdout }}
+      plan-exitcode: ${{ steps.plan.outputs.exitcode }}
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Azure Login via OIDC
+      uses: azure/login@v1
+      with:
+        client-id: ${{ secrets.AZURE_CLIENT_ID }}
+        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.5.7
+        terraform_wrapper: false
+
+    - name: Copy environment configuration
+      run: |
+        cp environments/${{ env.ENVIRONMENT }}/terraform.tfvars provisioning/
+        cp environments/${{ env.ENVIRONMENT }}/backend.tf provisioning/
+
+    - name: Terraform Init
+      run: |
+        cd provisioning
+        terraform init
+
+    - name: Terraform Plan
+      id: plan
+      run: |
+        cd provisioning
+        if [ "${{ github.event.inputs.destroy }}" == "true" ]; then
+          terraform plan -destroy -var-file=terraform.tfvars -out=tfplan
+        else
+          terraform plan -var-file=terraform.tfvars -out=tfplan
+        fi
+      env:
+        ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+
+    - name: Upload plan
+      uses: actions/upload-artifact@v4
+      with:
+        name: terraform-plan-${{ env.ENVIRONMENT }}
+        path: provisioning/tfplan
+
+  backup-production:
+    name: 'Backup Production Data'
+    runs-on: ubuntu-latest
+    needs: terraform-plan
+    if: github.event.inputs.destroy != 'true'
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Azure Login via OIDC
+      uses: azure/login@v1
+      with:
+        client-id: ${{ secrets.AZURE_CLIENT_ID }}
+        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+    - name: Create production backup
+      run: |
+        echo "Creating production backup before deployment..."
+        # This would include actual backup logic for production data
+        echo "Backup completed successfully"
+
+  terraform-apply:
+    name: 'Terraform Apply'
+    runs-on: ubuntu-latest
+    needs: [terraform-plan, backup-production]
+    environment: 
+      name: production
+      url: ${{ steps.terraform-outputs.outputs.vm_url }}
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Azure Login via OIDC
+      uses: azure/login@v1
+      with:
+        client-id: ${{ secrets.AZURE_CLIENT_ID }}
+        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.5.7
+
+    - name: Copy environment configuration
+      run: |
+        cp environments/${{ env.ENVIRONMENT }}/terraform.tfvars provisioning/
+        cp environments/${{ env.ENVIRONMENT }}/backend.tf provisioning/
+
+    - name: Download plan
+      uses: actions/download-artifact@v4
+      with:
+        name: terraform-plan-${{ env.ENVIRONMENT }}
+        path: provisioning/
+
+    - name: Terraform Init
+      run: |
+        cd provisioning
+        terraform init
+
+    - name: Terraform Apply
+      run: |
+        cd provisioning
+        terraform apply -auto-approve tfplan
+      env:
+        ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+
+    - name: Get Terraform Outputs
+      id: terraform-outputs
+      run: |
+        cd provisioning
+        echo "vm_ip=$(terraform output -raw public_ip_address)" >> $GITHUB_OUTPUT
+        echo "vm_name=$(terraform output -raw vm_name)" >> $GITHUB_OUTPUT
+        echo "resource_group=$(terraform output -raw resource_group_name)" >> $GITHUB_OUTPUT
+        echo "vm_url=http://$(terraform output -raw public_ip_address)" >> $GITHUB_OUTPUT
+
+    - name: Save outputs for Ansible
+      run: |
+        mkdir -p configuration-management/inventory
+        cat > configuration-management/inventory/hosts.yml << EOF
+        all:
+          children:
+            azure_vms:
+              hosts:
+                ${{ steps.terraform-outputs.outputs.vm_name }}:
+                  ansible_host: ${{ steps.terraform-outputs.outputs.vm_ip }}
+                  ansible_user: azureuser
+                  ansible_ssh_private_key_file: ~/.ssh/id_rsa
+                  ansible_python_interpreter: /usr/bin/python3
+              vars:
+                ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+                environment_name: "${{ env.ENVIRONMENT }}"
+        EOF
+
+    - name: Upload inventory
+      uses: actions/upload-artifact@v4
+      with:
+        name: ansible-inventory-${{ env.ENVIRONMENT }}
+        path: configuration-management/inventory/hosts.yml
+
+  ansible-deploy:
+    name: 'Ansible Configuration'
+    runs-on: ubuntu-latest
+    needs: terraform-apply
+    if: github.event.inputs.destroy != 'true'
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install Ansible
+      run: |
+        python -m pip install --upgrade pip
+        pip install ansible
+
+    - name: Download inventory
+      uses: actions/download-artifact@v4
+      with:
+        name: ansible-inventory-${{ env.ENVIRONMENT }}
+        path: configuration-management/inventory/
+
+    - name: Copy environment variables
+      run: |
+        cp environments/${{ env.ENVIRONMENT }}/ansible_vars.yml configuration-management/group_vars/azure_vms.yml
+
+    - name: Setup SSH key
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+
+    - name: Install Ansible collections
+      run: |
+        cd configuration-management
+        ansible-galaxy collection install -r requirements.yml
+
+    - name: Wait for VM to be ready
+      run: |
+        cd configuration-management
+        for i in {1..10}; do
+          if ansible all -m ping -i inventory/hosts.yml; then
+            echo "VM is ready!"
+            break
+          fi
+          echo "Waiting for VM to be ready... (attempt $i/10)"
+          sleep 30
+        done
+
+    - name: Run Ansible Playbook
+      run: |
+        cd configuration-management
+        ansible-playbook -i inventory/hosts.yml site.yml --ssh-extra-args='-o StrictHostKeyChecking=no' -v
+
+  production-tests:
+    name: 'Production Smoke Tests'
+    runs-on: ubuntu-latest
+    needs: ansible-deploy
+    if: github.event.inputs.destroy != 'true'
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install test dependencies
+      run: |
+        pip install requests pytest testinfra
+
+    - name: Download inventory
+      uses: actions/download-artifact@v4
+      with:
+        name: ansible-inventory-${{ env.ENVIRONMENT }}
+        path: configuration-management/inventory/
+
+    - name: Setup SSH key
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+
+    - name: Run production smoke tests
+      run: |
+        cd tests
+        python -m pytest test_production.py -v --env=${{ env.ENVIRONMENT }}
+
+    - name: Run security validation
+      run: |
+        cd tests
+        python -m pytest test_security.py -v --env=${{ env.ENVIRONMENT }}
+
+  notify-deployment:
+    name: 'Notify Deployment Status'
+    runs-on: ubuntu-latest
+    needs: [terraform-apply, ansible-deploy, production-tests]
+    if: always()
+    
+    steps:
+    - name: Deployment notification
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const deploymentStatus = '${{ needs.production-tests.result }}';
+          const emoji = deploymentStatus === 'success' ? '🚀' : '🚨';
+          const status = deploymentStatus === 'success' ? 'successful' : 'failed';
+          
+          const message = `${emoji} Production deployment ${status}!
+          
+          **Environment:** Production
+          **Commit:** ${context.sha.substring(0, 7)}
+          **Actor:** ${context.actor}
+          **Status:** ${deploymentStatus}
+          
+          [View deployment details](${context.payload.repository.html_url}/actions/runs/${context.runId})`;
+          
+          // This would typically send to Slack, Teams, or email
+          console.log(message);

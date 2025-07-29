@@ -1,0 +1,34 @@
+---
+- name: Install fail2ban
+  apt:
+    name: fail2ban
+    state: present
+
+- name: Create fail2ban local configuration
+  template:
+    src: jail.local.j2
+    dest: /etc/fail2ban/jail.local
+    backup: yes
+  notify: restart fail2ban
+
+- name: Create SSH jail configuration
+  copy:
+    dest: /etc/fail2ban/jail.d/ssh.conf
+    content: |
+      [sshd]
+      enabled = true
+      port = 22
+      filter = sshd
+      logpath = /var/log/auth.log
+      maxretry = {{ fail2ban_maxretry }}
+      bantime = {{ fail2ban_bantime }}
+      findtime = {{ fail2ban_findtime }}
+    mode: '0644'
+    backup: yes
+  notify: restart fail2ban
+
+- name: Start and enable fail2ban
+  systemd:
+    name: fail2ban
+    state: started
+    enabled: yes

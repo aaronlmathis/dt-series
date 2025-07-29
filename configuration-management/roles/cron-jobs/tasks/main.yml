@@ -1,0 +1,139 @@
+---
+- name: Create backup directory
+  file:
+    path: /var/backups/system
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Create backup scripts directory
+  file:
+    path: /opt/scripts
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Create system backup script
+  copy:
+    dest: /opt/scripts/system_backup.sh
+    content: |
+      #!/bin/bash
+      # System backup script
+      set -e
+      
+      BACKUP_DIR="/var/backups/system"
+      DATE=$(date +%Y%m%d_%H%M%S)
+      BACKUP_FILE="system_backup_${DATE}.tar.gz"
+      
+      # Create backup
+      tar -czf "${BACKUP_DIR}/${BACKUP_FILE}" \
+          --exclude='/proc' \
+          --exclude='/tmp' \
+          --exclude='/sys' \
+          --exclude='/dev' \
+          --exclude='/var/backups' \
+          --exclude='/var/cache' \
+          --exclude='/var/tmp' \
+          /etc \
+          /home/{{ ansible_user }}/.ssh \
+          /var/log 2>/dev/null || true
+      
+      # Keep only last 7 days of backups
+      find "${BACKUP_DIR}" -name "system_backup_*.tar.gz" -mtime +7 -delete
+      
+      # Log backup completion
+      echo "$(date): System backup completed - ${BACKUP_FILE}" >> /var/log/backup.log
+    mode: '0755'
+
+- name: Create log rotation script
+  copy:
+    dest: /opt/scripts/log_rotation.sh
+    content: |
+      #!/bin/bash
+      # Log rotation script
+      set -e
+      
+    
+      # Rotate application logs
+      find /var/log -name "*.log" -size +100M -exec gzip {} \;
+      find /var/log -name "*.gz" -mtime +30 -delete
+      
+      # Clean old journal logs
+      journalctl --vacuum-time=30d
+      
+      # Log rotation completion
+      echo "$(date): Log rotation completed" >> /var/log/maintenance.log
+    mode: '0755'
+
+- name: Create system monitoring script
+  copy:
+    dest: /opt/scripts/system_monitor.sh
+    content: |
+      #!/bin/bash
+      # System monitoring script
+      set -e
+      
+      LOG_FILE="/var/log/system_monitor.log"
+      
+      # Check disk usage
+      DISK_USAGE=$(df / | tail -1 | awk '{print $5}' | sed 's/%//')
+      if [ "$DISK_USAGE" -gt 85 ]; then
+          echo "$(date): WARNING - Disk usage is ${DISK_USAGE}%" >> "$LOG_FILE"
+      fi
+      
+      # Check memory usage
+      MEM_USAGE=$(free | grep Mem | awk '{printf("%.0f", $3/$2 * 100.0)}')
+      if [ "$MEM_USAGE" -gt 90 ]; then
+          echo "$(date): WARNING - Memory usage is ${MEM_USAGE}%" >> "$LOG_FILE"
+      fi
+          
+      # Log system status
+      echo "$(date): System check completed - Disk: ${DISK_USAGE}%, Memory: ${MEM_USAGE}%" >> "$LOG_FILE"
+    mode: '0755'
+
+- name: Schedule daily system backup
+  cron:
+    name: "Daily system backup"
+    minute: "0"
+    hour: "2"
+    job: "/opt/scripts/system_backup.sh"
+    user: root
+
+- name: Schedule daily log rotation
+  cron:
+    name: "Daily log rotation"
+    minute: "0"
+    hour: "3"
+    job: "/opt/scripts/log_rotation.sh"
+    user: root
+
+- name: Schedule system monitoring (every 15 minutes)
+  cron:
+    name: "System monitoring"
+    minute: "*/15"
+    job: "/opt/scripts/system_monitor.sh"
+    user: root
+
+- name: Schedule weekly system update check
+  cron:
+    name: "Weekly update check"
+    minute: "0"
+    hour: "4"
+    weekday: "0"
+    job: "apt update && apt list --upgradable >> /var/log/updates.log 2>&1"
+    user: root
+
+- name: Create log files with proper permissions
+  file:
+    path: "{{ item }}"
+    state: touch
+    owner: root
+    group: root
+    mode: '0644'
+  loop:
+    - /var/log/backup.log
+    - /var/log/maintenance.log
+    - /var/log/system_monitor.log
+    - /var/log/updates.log

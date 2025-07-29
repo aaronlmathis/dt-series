@@ -1,0 +1,39 @@
+---
+- name: Install chrony
+  apt:
+    name: chrony
+    state: present
+    update_cache: yes
+
+- name: Configure chrony
+  template:
+    src: chrony.conf.j2
+    dest: /etc/chrony/chrony.conf
+    backup: yes
+  notify: restart chrony
+
+- name: Start and enable chrony service
+  systemd:
+    name: chrony
+    state: started
+    enabled: yes
+
+- name: Wait for chrony to start
+  wait_for:
+    timeout: 10
+  delegate_to: localhost
+
+- name: Force time synchronization
+  command: chronyc makestep
+  changed_when: true
+  ignore_errors: yes
+
+- name: Check chrony sources
+  command: chronyc sources -v
+  register: chrony_sources
+  changed_when: false
+
+- name: Display chrony sources
+  debug:
+    var: chrony_sources.stdout_lines
+  when: chrony_sources is defined

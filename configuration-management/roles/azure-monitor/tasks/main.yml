@@ -1,0 +1,95 @@
+---
+- name: Add Microsoft GPG key
+  apt_key:
+    url: https://packages.microsoft.com/keys/microsoft.asc
+    state: present
+  when: azure_monitor_enabled | default(false)
+
+- name: Add Microsoft Azure CLI repository
+  apt_repository:
+    repo: "deb [arch=amd64] https://packages.microsoft.com/repos/azure-cli/ {{ ansible_distribution_release }} main"
+    state: present
+    update_cache: yes
+  when: azure_monitor_enabled | default(false)
+
+- name: Install Azure Monitor Agent (alternative method)
+  apt:
+    name: 
+      - azure-cli
+    state: present
+    update_cache: yes
+  when: azure_monitor_enabled | default(false)
+
+- name: Download Azure Monitor Agent installer script
+  get_url:
+    url: "https://raw.githubusercontent.com/microsoft/OMS-Agent-for-Linux/master/installer/scripts/onboard_agent.sh"
+    dest: /tmp/onboard_agent.sh
+    mode: '0755'
+  when: azure_monitor_enabled | default(false)
+  ignore_errors: yes
+
+- name: Install Azure Monitor Agent via script (if available)
+  command: /tmp/onboard_agent.sh -w YOUR_WORKSPACE_ID -s YOUR_SHARED_KEY
+  when: 
+    - azure_monitor_enabled | default(false)
+    - false  # Disabled until workspace credentials are provided
+  ignore_errors: yes
+
+- name: Install basic monitoring tools instead
+  apt:
+    name:
+      - sysstat
+      - iotop
+      - nethogs
+      - ncdu
+      - htop
+      - nmon
+    state: present
+
+- name: Configure sysstat
+  lineinfile:
+    path: /etc/default/sysstat
+    regexp: '^ENABLED='
+    line: 'ENABLED="true"'
+    backup: yes
+  notify: restart sysstat
+
+- name: Start and enable sysstat
+  systemd:
+    name: sysstat
+    state: started
+    enabled: yes
+
+- name: Create basic monitoring script
+  copy:
+    dest: /usr/local/bin/system-monitor.sh
+    content: |
+      #!/bin/bash
+      # Basic system monitoring script
+      echo "=== System Monitor Report ===" 
+      echo "Date: $(date)"
+      echo "Uptime: $(uptime)"
+      echo "Load Average: $(cat /proc/loadavg)"
+      echo "Memory Usage:"
+      free -h
+      echo "Disk Usage:"
+      df -h
+      echo "Top 5 CPU processes:"
+      ps aux --sort=-%cpu | head -6
+      echo "Top 5 Memory processes:"
+      ps aux --sort=-%mem | head -6
+    mode: '0755'
+
+- name: Schedule basic monitoring
+  cron:
+    name: "system monitor"
+    minute: "*/15"
+    job: "/usr/local/bin/system-monitor.sh >> /var/log/system-monitor.log 2>&1"
+
+- name: Clean up downloaded files
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /tmp/azuremonitoragent.deb
+    - /tmp/onboard_agent.sh

@@ -1,0 +1,5 @@
+---
+- name: restart sysstat
+  systemd:
+    name: sysstat
+    state: restarted
