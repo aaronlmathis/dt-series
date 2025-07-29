@@ -133,17 +133,23 @@ jobs:
         cd configuration-management
         ansible-galaxy collection install -r requirements.yml
 
-    - name: Wait for VM to be ready
+    - name: Wait for SSH to be ready
       run: |
-        cd configuration-management
-        for i in {1..10}; do
-          if ansible all -m ping -i inventory/hosts.yml; then
-            echo "VM is ready!"
+        for i in {1..20}; do
+          if ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o BatchMode=yes azureuser@${{ steps.terraform-outputs.outputs.vm_ip }} 'echo "SSH is ready"'; then
+            echo "[SUCCESS] VM is accessible via SSH"
             break
           fi
-          echo "Waiting for VM... (attempt $i/10)"
+          if [ $i -eq 20 ]; then
+            echo "[FAIL] VM not ready after 10 minutes"
+            exit 1
+          fi
+          echo "Waiting for SSH... (attempt $i/20)"
           sleep 30
         done
+
+    - name: Bootstrap Python on VM
+      run: ansible all -i configuration-management/inventory/hosts.yml -m raw -a "sudo apt-get update && sudo apt-get install -y python3 python3-pip"
 
     - name: Run Ansible Playbook
       run: |
