@@ -13,3 +13,4 @@ subnet_prefix = "10.1.1.0/24"
 budget_amount = 100
 budget_threshold_percentage = 70
 alert_emails = ["staging-team@example.com"]
+ssh_public_key_path = "keys/id_rsa.pub"

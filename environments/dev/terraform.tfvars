@@ -13,3 +13,4 @@ subnet_prefix = "10.0.1.0/24"
 budget_amount = 50
 budget_threshold_percentage = 80
 alert_emails = ["dev-team@example.com"]
+ssh_public_key_path = "keys/id_rsa.pub"
