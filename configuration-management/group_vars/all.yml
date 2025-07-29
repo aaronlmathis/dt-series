@@ -5,8 +5,6 @@ fail2ban_maxretry: 3
 fail2ban_bantime: 3600
 fail2ban_findtime: 600
 
-
-
 # System configuration
 timezone: "UTC"
 ntp_servers:
@@ -21,3 +19,16 @@ log_rotation_schedule: "0 3 * * *"  # Daily at 3 AM
 
 # Azure Monitor configuration
 azure_monitor_enabled: true
+
+# Common Azure VM settings, moved from azure_vms.yml
+firewall_rules:
+  - port: "{{ ssh_port | default(22) }}"
+    proto: tcp
+    rule: allow
+    src: "{{ allowed_ssh_cidr | default('any') }}"
+
+disable_ipv6: true
+kernel_parameters:
+  - { name: net.ipv4.ip_forward, value: 0 }
+  - { name: net.ipv4.conf.all.send_redirects, value: 0 }
+  - { name: net.ipv4.conf.default.send_redirects, value: 0 }
