@@ -118,12 +118,6 @@ jobs:
                 environment_name: "${{ env.ENVIRONMENT }}"
         EOF
 
-    - name: Setup SSH key
-      run: |
-        mkdir -p ~/.ssh
-        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-        chmod 600 ~/.ssh/id_rsa
-
     - name: Copy environment variables
       run: |
         cp environments/${{ env.ENVIRONMENT }}/ansible_vars.yml configuration-management/group_vars/azure_vms.yml
