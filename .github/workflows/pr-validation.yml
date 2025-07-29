@@ -11,6 +11,7 @@ on:
 env:
   ARM_USE_OIDC: true
   ARM_USE_CLI: false
+  ENVIRONMENT: dev
 
 permissions:
   id-token: write
@@ -111,21 +112,37 @@ jobs:
       with:
         terraform_version: 1.5.7
 
-    - name: Copy dev configuration
+    - name: Setup SSH Keys
       run: |
-        cp environments/dev/terraform.tfvars provisioning/
-        cp environments/dev/backend.tf provisioning/
+        mkdir -p ~/.ssh provisioning/keys
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        # Generate public key from private key
+        ssh-keygen -y -f ~/.ssh/id_rsa > provisioning/keys/id_rsa.pub
+
+    - name: Copy environment configuration
+      run: |
+        cp environments/${{ env.ENVIRONMENT }}/terraform.tfvars provisioning/
+        cp environments/${{ env.ENVIRONMENT }}/backend.tf provisioning/
 
     - name: Terraform Init
       run: |
         cd provisioning
         terraform init
+      env:
+        ARM_USE_OIDC: true
+        ARM_USE_CLI: false
+        ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
 
     - name: Terraform Plan
       run: |
         cd provisioning
         terraform plan -var-file=terraform.tfvars
       env:
+        ARM_USE_OIDC: true
+        ARM_USE_CLI: false
         ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
         ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
         ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
@@ -195,5 +212,4 @@ jobs:
 
     - name: Run infrastructure tests
       run: |
-        cd tests
-        python -m pytest test_infrastructure.py -v
+        python -m pytest tests/test_infrastructure.py -v

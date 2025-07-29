@@ -1,17 +1,18 @@
 ---
 - name: Backup original SSH config
-  copy:
+  ansible.builtin.copy:
     src: /etc/ssh/sshd_config
     dest: /etc/ssh/sshd_config.backup
-    remote_src: yes
-    force: no
+    remote_src: true
+    force: false
+    mode: '0600'
 
 - name: Configure SSH hardening
-  lineinfile:
+  ansible.builtin.lineinfile:
     path: /etc/ssh/sshd_config
     regexp: "{{ item.regexp }}"
     line: "{{ item.line }}"
-    backup: yes
+    backup: true
   loop:
     - { regexp: '^#?PermitRootLogin ', line: 'PermitRootLogin no' }
     - { regexp: '^#?PasswordAuthentication ', line: 'PasswordAuthentication no' }
@@ -29,19 +30,19 @@
     - { regexp: '^#?MaxSessions ', line: 'MaxSessions 2' }
     - { regexp: '^#?Protocol ', line: 'Protocol 2' }
     - { regexp: '^#?LogLevel ', line: 'LogLevel VERBOSE' }
-  notify: restart ssh
+  notify: Restart ssh
 
 - name: Configure allowed users
-  lineinfile:
+  ansible.builtin.lineinfile:
     path: /etc/ssh/sshd_config
     regexp: '^#?AllowUsers '
     line: 'AllowUsers {{ ssh_allowed_users | join(" ") }}'
-    backup: yes
+    backup: true
   when: ssh_allowed_users is defined
-  notify: restart ssh
+  notify: Restart ssh
 
 - name: Configure strong ciphers and MACs
-  blockinfile:
+  ansible.builtin.blockinfile:
     path: /etc/ssh/sshd_config
     block: |
       # Strong Ciphers and MACs
@@ -49,14 +50,14 @@
       MACs hmac-sha2-256-etm@openssh.com,hmac-sha2-512-etm@openssh.com,hmac-sha2-256,hmac-sha2-512
       KexAlgorithms curve25519-sha256@libssh.org,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512,diffie-hellman-group14-sha256
     marker: "# {mark} ANSIBLE MANAGED BLOCK - SSH CRYPTO"
-    backup: yes
-  notify: restart ssh
+    backup: true
+  notify: Restart ssh
 
 - name: Validate SSH configuration
-  command: sshd -t
+  ansible.builtin.command: sshd -t
   changed_when: false
 
 - name: Ensure SSH service is enabled
-  systemd:
+  ansible.builtin.systemd:
     name: ssh
-    enabled: yes
+    enabled: true
