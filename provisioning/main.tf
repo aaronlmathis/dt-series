@@ -13,42 +13,40 @@ provider "azurerm" {
 
 data "azurerm_subscription" "primary" {}
 
-resource "azurerm_resource_group" "rg" {
-  name     = var.resource_group_name
-  location = var.location
-  tags     = { environment = var.environment }
+# Use a data source for the existing resource group
+data "azurerm_resource_group" "rg" {
+  name = var.resource_group_name
 }
 
 resource "azurerm_virtual_network" "vnet" {
   name                = var.vnet_name
   address_space       = [var.vnet_address_space]
-  location            = azurerm_resource_group.rg.location
-  resource_group_name = azurerm_resource_group.rg.name
-  tags                = azurerm_resource_group.rg.tags
+  location            = data.azurerm_resource_group.rg.location
+  resource_group_name = data.azurerm_resource_group.rg.name
+  tags                = { environment = var.environment }
 }
 
 resource "azurerm_subnet" "subnet" {
   name                 = var.subnet_name
-  resource_group_name  = azurerm_resource_group.rg.name
+  resource_group_name  = data.azurerm_resource_group.rg.name
   virtual_network_name = azurerm_virtual_network.vnet.name
   address_prefixes     = [var.subnet_prefix]
 }
 
 resource "azurerm_public_ip" "public_ip" {
   name                = "${var.vm_name}-pip"
-  location            = azurerm_resource_group.rg.location
-  resource_group_name = azurerm_resource_group.rg.name
+  location            = data.azurerm_resource_group.rg.location
+  resource_group_name = data.azurerm_resource_group.rg.name
   sku                 = "Standard"
   allocation_method   = "Static"
-  tags                = azurerm_resource_group.rg.tags
+  tags                = { environment = var.environment }
 }
-
 
 resource "azurerm_network_security_group" "ssh_nsg" {
   name                = "${var.vm_name}-nsg"
-  location            = azurerm_resource_group.rg.location
-  resource_group_name = azurerm_resource_group.rg.name
-  tags                = azurerm_resource_group.rg.tags
+  location            = data.azurerm_resource_group.rg.location
+  resource_group_name = data.azurerm_resource_group.rg.name
+  tags                = { environment = var.environment }
 
   security_rule {
     name                       = "Allow-SSH"
@@ -101,9 +99,9 @@ resource "azurerm_network_security_group" "ssh_nsg" {
 
 resource "azurerm_network_interface" "nic" {
   name                = "${var.vm_name}-nic"
-  location            = azurerm_resource_group.rg.location
-  resource_group_name = azurerm_resource_group.rg.name
-  tags                = azurerm_resource_group.rg.tags
+  location            = data.azurerm_resource_group.rg.location
+  resource_group_name = data.azurerm_resource_group.rg.name
+  tags                = { environment = var.environment }
 
   ip_configuration {
     name                          = "internal"
@@ -120,8 +118,8 @@ resource "azurerm_network_interface_security_group_association" "nic_nsg_assoc" 
 
 resource "azurerm_linux_virtual_machine" "vm" {
   name                  = var.vm_name
-  resource_group_name   = azurerm_resource_group.rg.name
-  location              = azurerm_resource_group.rg.location
+  resource_group_name   = data.azurerm_resource_group.rg.name
+  location              = data.azurerm_resource_group.rg.location
   size                  = var.vm_size
   admin_username        = var.admin_username
   network_interface_ids = [azurerm_network_interface.nic.id]
@@ -140,5 +138,5 @@ resource "azurerm_linux_virtual_machine" "vm" {
     sku       = var.image_sku
     version   = var.image_version
   }
-  tags = azurerm_resource_group.rg.tags
+  tags = { environment = var.environment }
 }
