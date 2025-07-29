@@ -80,13 +80,13 @@ variable "image_publisher" {
 variable "image_offer" {
   description = "VM image offer"
   type        = string
-  default     = "UbuntuServer"
+  default     = "0001-com-ubuntu-server-jammy"
 }
 
 variable "image_sku" {
   description = "VM image SKU"
   type        = string
-  default     = "18.04-LTS"
+  default     = "22_04-lts-gen2"
 }
 
 variable "image_version" {
