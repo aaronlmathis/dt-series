@@ -30,6 +30,14 @@ jobs:
       vm_ip: ${{ steps.terraform-outputs.outputs.vm_ip }}
       vm_name: ${{ steps.terraform-outputs.outputs.vm_name }}
 
+    env: 
+      ARM_USE_OIDC: true
+      ARM_USE_CLI: false
+      ARM_CLIENT_ID:      ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID:      ${{ secrets.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      ENVIRONMENT: dev
+
     steps:
     - name: Checkout
       uses: actions/checkout@v4
@@ -74,23 +82,13 @@ jobs:
       run: |
         cd provisioning
         terraform init
-      env:
-        ARM_USE_OIDC: true
-        ARM_USE_CLI: false
-        ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-        ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-        ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+
 
     - name: Terraform Apply
       run: |
         cd provisioning
         terraform apply -auto-approve -var-file=terraform.tfvars
-      env:
-        ARM_USE_OIDC: true
-        ARM_USE_CLI: false
-        ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-        ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-        ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+
 
     - name: Get Terraform Outputs
       id: terraform-outputs
@@ -98,12 +96,6 @@ jobs:
         cd provisioning
         echo "vm_ip=$(terraform output -raw public_ip_address)" >> $GITHUB_OUTPUT
         echo "vm_name=$(terraform output -raw vm_name)" >> $GITHUB_OUTPUT
-      env:
-        ARM_USE_OIDC: true
-        ARM_USE_CLI: false
-        ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-        ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-        ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
 
     # Ansible Deploy
     - name: Create Ansible inventory
