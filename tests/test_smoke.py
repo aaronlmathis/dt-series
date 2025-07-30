@@ -11,7 +11,7 @@ import pytest
 # --------------------------------------------------------------------------- #
 # Configuration
 # --------------------------------------------------------------------------- #
-TF_DIR   = Path(os.getenv("TF_DIR", "../../provisioning")).resolve()
+TF_DIR   = Path(os.getenv("TF_DIR", "../provisioning")).resolve()
 SSH_USER = os.getenv("SSH_USER", "azureuser")
 SSH_KEY  = os.getenv("SSH_KEY", str(Path.home() / ".ssh/id_rsa"))
 VM_IP    = None  # cached after first lookup
