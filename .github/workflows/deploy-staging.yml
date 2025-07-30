@@ -234,4 +234,4 @@ jobs:
             labels: ['production', 'deployment', 'approval-required']
           });
           
-          console.log(\`Created approval issue: #\${issue.data.number}\`);
+          console.log(`Created approval issue: #${issue.data.number}`);
