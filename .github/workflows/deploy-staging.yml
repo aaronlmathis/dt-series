@@ -16,7 +16,6 @@ env:
 permissions:
   id-token: write
   contents: read
-  issues: write
 
 # ──────────────────────────────────────────────────────────────────────────────
 jobs:
@@ -200,37 +199,3 @@ jobs:
         echo "[PASS] Access controls validated"
         echo "[PASS] Vulnerability assessment passed"
         
-# 3 ────────────────── Create production‑approval issue ───────────────────────
-  request-production-approval:
-    name: 'Request Production Approval'
-    runs-on: ubuntu-latest
-    needs: security-tests
-    
-    steps:
-    - name: Create production approval issue
-      uses: actions/github-script@v7
-      with:
-        script: |
-          const issue = await github.rest.issues.create({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            title: `Production Deployment Approval Required - ${context.sha.substring(0, 7)}`,
-            body: `## Production Deployment Request
-          
-          **Staging Environment**: [PASS] Tests Passed
-          **Commit**: ${context.sha}
-          **Branch**: ${context.ref}
-          **Triggered by**: ${context.actor}
-          
-          ### Staging Test Results
-          - [PASS] Infrastructure deployed successfully
-          - [PASS] Security scans completed
-          - [PASS] Firewall verification passed
-          
-          **Ready for production deployment.**
-          
-          To approve: Close this issue and manually run the production deployment workflow.`,
-            labels: ['production', 'deployment', 'approval-required']
-          });
-          
-          console.log(`Created approval issue: #${issue.data.number}`);
