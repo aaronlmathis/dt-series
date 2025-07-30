@@ -94,7 +94,7 @@ jobs:
       - name: Build inventory
         run: |
           mkdir -p configuration-management/inventory
-          cat > configuration-management/inventory/hosts.yml <<'EOF'
+          cat > configuration-management/inventory/hosts.yml << EOF
           all:
             children:
               azure_vms:
