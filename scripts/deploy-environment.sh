@@ -159,20 +159,29 @@ run_ansible() {
     
     cd "$ANSIBLE_DIR"
     
-    # Install required collections
-    ansible-galaxy collection install -r requirements.yml --force
-    
-    # Wait for VM to be ready
-    print_info "Waiting for VM to be ready..."
-    for i in {1..10}; do
-        if ansible all -m ping -i inventory/hosts.yml >/dev/null 2>&1; then
-            print_info "VM is ready!"
+    # Wait for SSH to be ready
+    print_info "Waiting for SSH to be ready..."
+    VM_IP=$(terraform -chdir="$TERRAFORM_DIR" output -raw public_ip_address)
+    for i in {1..20}; do
+        if ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o BatchMode=yes "azureuser@${VM_IP}" 'echo "SSH is ready"'; then
+            print_info "✅ VM is accessible via SSH"
             break
         fi
-        print_warning "Waiting for VM... (attempt $i/10)"
+        if [ $i -eq 20 ]; then
+            print_error "❌ VM not ready after 10 minutes"
+            exit 1
+        fi
+        print_warning "Waiting for SSH... (attempt $i/20)"
         sleep 30
     done
     
+    # Bootstrap Python
+    print_info "Bootstrapping Python on VM..."
+    ansible all -i inventory/hosts.yml -m raw -a "cloud-init status --wait && sudo apt-get update && sudo apt-get install -y python3-pip"
+
+    # Install required collections
+    ansible-galaxy collection install -r requirements.yml --force
+
     # Run the playbook
     ansible-playbook -i inventory/hosts.yml site.yml --ssh-extra-args='-o StrictHostKeyChecking=no' -v
     
