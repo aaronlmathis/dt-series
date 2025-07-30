@@ -1,196 +1,101 @@
 """
-Production health checks and monitoring tests
+Production health checks and security verification. 
+These tests ensure the production environment is secure, stable, and compliant with best practices.
 """
-import pytest
+import os
 import subprocess
-import requests
-import socket
-import time
+import pytest
 
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
+def get_vm_ip() -> str:
+    """Return the VM IP from the workflow’s environment; skip tests if absent."""
+    vm_ip = os.environ.get("VM_IP")
+    if not vm_ip:
+        pytest.skip("VM_IP environment variable not set")
+    return vm_ip
+
+
+def ssh_command(host: str, command: str) -> subprocess.CompletedProcess:
+    """Run a command on the remote host via SSH and return the CompletedProcess."""
+    try:
+        return subprocess.run(
+            [
+                "ssh",
+                "-o", "ConnectTimeout=10",
+                "-o", "StrictHostKeyChecking=no",
+                f"azureuser@{host}",
+                command,
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        pytest.fail(f"SSH command failed: {exc}")  # surfaces stderr in pytest output
+
+
+# ── Tests ──────────────────────────────────────────────────────────────────────
 def test_vm_health_status():
-    """Test basic VM health and availability"""
-    print("✅ Testing VM health status...")
-    print("✅ VM is responding to health checks")
-    print("✅ System load is within acceptable limits")
-    print("✅ Memory usage is normal") 
-    print("✅ Disk space is adequate")
-    
-    # In a real scenario:
-    # vm_ip = get_terraform_output("public_ip_address")
-    # Check system metrics via SSH or monitoring endpoint
-    # result = ssh_command(vm_ip, "uptime && free -h && df -h")
-    # Parse and validate metrics
-    
-    assert True  # Simulated success
+    """Basic VM health (uptime / mem / root disk)."""
+    vm_ip = get_vm_ip()
+    result = ssh_command(vm_ip, "uptime && free -m && df -h /")
+    assert "load average" in result.stdout, "uptime output missing"
+    assert "Mem:" in result.stdout, "memory info missing"
+    assert "/" in result.stdout, "disk info missing"
+    print("[PASS] VM health checks passed")
+
 
 def test_critical_services_status():
-    """Test that all critical services are running"""
-    print("✅ Testing critical services...")
-    
-    critical_services = [
-        "ssh",
-        "fail2ban", 
-        "firewalld",
-        "chronyd",
-        "rsyslog"
-    ]
-    
-    for service in critical_services:
-        print(f"✅ Service {service} is active and running")
-        # In a real scenario:
-        # vm_ip = get_terraform_output("public_ip_address")
-        # result = ssh_command(vm_ip, f"systemctl is-active {service}")
-        # assert "active" in result.stdout, f"Service {service} is not running"
-    
-    assert True  # Simulated success
+    """Ensure critical services are active (Ubuntu defaults + hardening)."""
+    vm_ip = get_vm_ip()
+    critical_services = ["ssh", "fail2ban", "ufw", "chronyd", "rsyslog"]
+    for svc in critical_services:
+        result = ssh_command(vm_ip, f"systemctl is-active {svc}")
+        assert "active" in result.stdout, f"service {svc} is not running"
+        print(f"[PASS] {svc} is active")
+
 
 def test_network_connectivity():
-    """Test network connectivity and DNS resolution"""
-    print("✅ Testing network connectivity...")
-    print("✅ VM can reach external services")
-    print("✅ DNS resolution is working")
-    print("✅ Time synchronization is active")
-    
-    # In a real scenario:
-    # vm_ip = get_terraform_output("public_ip_address")
-    # Test external connectivity
-    # result = ssh_command(vm_ip, "ping -c 3 8.8.8.8")
-    # assert result.returncode == 0, "Cannot reach external services"
-    
-    # Test DNS resolution
-    # result = ssh_command(vm_ip, "nslookup google.com")
-    # assert result.returncode == 0, "DNS resolution failed"
-    
-    assert True  # Simulated success
+    """Verify outbound connectivity and DNS resolution."""
+    vm_ip = get_vm_ip()
+    # External reachability
+    result = ssh_command(vm_ip, "ping -c 2 8.8.8.8")
+    assert result.returncode == 0, "ICMP to 8.8.8.8 failed"
+    # DNS resolution
+    result = ssh_command(vm_ip, "nslookup google.com")
+    assert result.returncode == 0, "DNS resolution failed"
+    print("[PASS] network connectivity + DNS OK")
+
 
 def test_security_baseline():
-    """Test security baseline compliance"""
-    print("✅ Testing security baseline...")
-    print("✅ No unauthorized processes running")
-    print("✅ No suspicious network connections")
-    print("✅ File integrity checks passed")
-    print("✅ User accounts are secure")
-    
-    # In a real scenario:
-    # vm_ip = get_terraform_output("public_ip_address")
-    # Check for unauthorized processes
-    # result = ssh_command(vm_ip, "ps aux | grep -v grep | grep -E '(nc|netcat|ncat)'")
-    # assert result.returncode != 0, "Suspicious processes detected"
-    
-    # Check network connections
-    # result = ssh_command(vm_ip, "ss -tuln | grep -v '127.0.0.1\\|::1'")
-    # Validate expected connections only
-    
-    assert True  # Simulated success
+    """Quick security sanity checks for running processes and open ports."""
+    vm_ip = get_vm_ip()
+
+    # No stray netcat variants
+    result = ssh_command(vm_ip, "pgrep -fa '(nc|netcat|ncat)' || true")
+    assert result.stdout.strip() == "", "netcat/nc processes detected"
+
+    # No unexpected listening sockets (non‑localhost)
+    result = ssh_command(vm_ip, "ss -tuln | grep -vE '(^State|127\\.0\\.0\\.1|::1)'")
+    assert result.stdout.strip() == "", "unexpected listening sockets found"
+    print("[PASS] baseline security checks passed")
+
 
 def test_log_analysis():
-    """Test log analysis for security events"""
-    print("✅ Testing log analysis...")
-    print("✅ No security alerts in logs")
-    print("✅ Failed login attempts are minimal")
-    print("✅ System logs are being generated")
-    print("✅ No error patterns detected")
-    
-    # In a real scenario:
-    # vm_ip = get_terraform_output("public_ip_address")
-    # Check auth logs for failed attempts
-    # result = ssh_command(vm_ip, "grep 'Failed password' /var/log/auth.log | tail -10")
-    # Validate acceptable failure rate
-    
-    # Check system logs for errors
-    # result = ssh_command(vm_ip, "journalctl --since '1 hour ago' --priority err")
-    # Assert no critical errors
-    
-    assert True  # Simulated success
+    """Ensure logs exist and no recent critical errors."""
+    vm_ip = get_vm_ip()
 
-def test_backup_verification():
-    """Test backup systems and data integrity"""
-    print("✅ Testing backup verification...")
-    print("✅ Backup systems are operational")
-    print("✅ Configuration backups are current")
-    print("✅ Data integrity verified")
-    
-    # In a real scenario:
-    # Verify backup scripts executed successfully
-    # Check backup timestamps
-    # Validate backup file integrity
-    
-    assert True  # Simulated success
+    # Recent failed SSH logins < 5
+    result = ssh_command(vm_ip, "grep -c 'Failed password' /var/log/auth.log || true")
+    failed = int(result.stdout.strip() or 0)
+    assert failed < 5, f"{failed} recent failed SSH logins"
 
-def test_monitoring_endpoints():
-    """Test monitoring and observability endpoints"""
-    print("✅ Testing monitoring endpoints...")
-    print("✅ System metrics are being collected")
-    print("✅ Performance metrics are normal")
-    print("✅ Alert systems are functional")
-    
-    # In a real scenario:
-    # Test Azure Monitor agent status
-    # vm_ip = get_terraform_output("public_ip_address")
-    # result = ssh_command(vm_ip, "systemctl status azuremonitoragent")
-    # assert "active" in result.stdout, "Azure Monitor agent not running"
-    
-    # Check metrics collection
-    # Verify log forwarding to Azure Log Analytics
-    
-    assert True  # Simulated success
+    # System logs present
+    result = ssh_command(vm_ip, "test -f /var/log/syslog -o -f /var/log/messages")
+    assert result.returncode == 0, "system logs missing"
 
-def test_performance_benchmarks():
-    """Test performance against baseline metrics"""
-    print("✅ Testing performance benchmarks...")
-    print("✅ CPU performance within expected range")
-    print("✅ Memory performance adequate")
-    print("✅ Disk I/O performance normal")
-    print("✅ Network performance satisfactory")
-    
-    # In a real scenario:
-    # vm_ip = get_terraform_output("public_ip_address")
-    # Run performance tests
-    # result = ssh_command(vm_ip, "cat /proc/loadavg")
-    # Parse and validate load averages
-    
-    # Test disk performance
-    # result = ssh_command(vm_ip, "dd if=/dev/zero of=/tmp/test bs=1M count=100")
-    # Validate write performance
-    
-    assert True  # Simulated success
-
-def test_compliance_checks():
-    """Test compliance with security standards"""
-    print("✅ Testing compliance checks...")
-    print("✅ CIS benchmark compliance verified")
-    print("✅ Security policies enforced")
-    print("✅ Audit logging enabled")
-    print("✅ Access controls validated")
-    
-    # In a real scenario:
-    # Run automated compliance checks
-    # Check against CIS benchmarks
-    # Validate security configurations
-    
-    assert True  # Simulated success
-
-def ssh_command(host, command):
-    """Helper function to run SSH commands"""
-    try:
-        result = subprocess.run([
-            "ssh", "-o", "ConnectTimeout=10",
-            "-o", "StrictHostKeyChecking=no", 
-            f"azureuser@{host}", command
-        ], capture_output=True, text=True, check=True)
-        return result
-    except subprocess.CalledProcessError as e:
-        pytest.fail(f"SSH command failed: {e}")
-
-def get_terraform_output(output_name):
-    """Helper function to get Terraform outputs"""
-    try:
-        result = subprocess.run([
-            "terraform", "output", "-raw", output_name
-        ], cwd="../provisioning", capture_output=True, text=True, check=True)
-        return result.stdout.strip()
-    except subprocess.CalledProcessError:
-        pytest.fail(f"Failed to get Terraform output: {output_name}")
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+    # No priority=err logs in last hour
+    result = ssh_command(vm_ip, "journalctl --since '-1h' --priority err || true")
+    assert result.stdout.strip() == "", "critical errors in journal"
+    print("[PASS] log analysis clean")
