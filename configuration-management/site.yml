@@ -5,13 +5,12 @@
   gather_facts: true
 
   pre_tasks:
-  # 1 ── Wait until the image finishes its own apt work ───────────────
-  - name: Wait for cloud‑init to finish
+  - name: Wait for cloud-init to finish
     command: cloud-init status --wait
     changed_when: false
-    failed_when: false        # skip on images without cloud‑init
+    failed_when: false        # skip on images without cloud-init
 
-  - name: Wait for dpkg / apt locks to clear (max 10 min)
+  - name: Wait for dpkg / apt locks to clear (max 10 min)
     shell: |
       lsof /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock || true
     register: lock_check
@@ -20,7 +19,6 @@
     until: lock_check.stdout == ""
     changed_when: false
 
-  # 2 ── Now it’s safe to touch apt ───────────────────────────────────
   - name: Update package cache
     ansible.builtin.apt:
       update_cache: yes
