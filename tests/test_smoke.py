@@ -30,11 +30,19 @@ def _run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
 
 def get_vm_ip() -> str:
     """Return the VM’s public IP (read once from Terraform)."""
+    # Prefer the value handed over by the deploy job
+    ip_env = os.getenv("PUBLIC_IP_ADDRESS")
+    if ip_env:
+        return ip_env
+
+    # Fallback to reading terraform output locally
     global VM_IP
     if VM_IP:
         return VM_IP
-
-    result = _run(["terraform", "output", "-raw", "public_ip_address"], cwd=TF_DIR)
+    result = _run(
+        ["terraform", "output", "-raw", "public_ip_address"],
+        cwd=TF_DIR,
+    )
     if result.returncode != 0:
         pytest.fail(f"Unable to obtain VM IP from Terraform:\n{result.stderr}")
 
