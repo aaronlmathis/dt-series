@@ -25,6 +25,7 @@ jobs:
 
 # 2 ────────────────── Deploy infrastructure & config ─────────────────────────
   deploy:
+    name: 'Deploy Infrastructure & Configuration'
     needs: manual-approval
     runs-on: ubuntu-latest
     environment: production
@@ -141,6 +142,7 @@ jobs:
 
 # 3 ────────────────── Health & security tests ────────────────────────────────
   health-checks:
+    name: 'Health & Security Tests'
     needs: deploy
     runs-on: ubuntu-latest
 
