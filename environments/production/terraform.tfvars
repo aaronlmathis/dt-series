@@ -1,11 +1,11 @@
 # Production Environment Configuration
-resource_group_name = "rg-terraform-state-prod"
+resource_group_name = "rg-terraform-state-production"
 environment = "production"
-location = "East US 2"  # Different region for production
+location = "East US" 
 vm_name = "prod-vm"
-vm_size = "Standard_B4ms"  # Larger instance for production
+vm_size = "Standard_B1s"
 admin_username = "azureuser"
-ssh_allowed_cidr = "10.0.0.0/8"  # Restrictive access
+ssh_allowed_cidr = "0.0.0.0/0" 
 vnet_name = "prod-vnet"
 vnet_address_space = "10.2.0.0/16"
 subnet_name = "prod-subnet"
