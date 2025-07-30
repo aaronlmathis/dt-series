@@ -191,10 +191,10 @@ jobs:
 
     - name: Additional security verification
       run: |
-        echo "✅ Security scans completed"
-        echo "✅ Firewall rules verified"
-        echo "✅ Access controls validated"
-        echo "✅ Vulnerability assessment passed"
+        echo "[PASS] Security scans completed"
+        echo "[PASS] Firewall rules verified"
+        echo "[PASS] Access controls validated"
+        echo "[PASS] Vulnerability assessment passed"
 
   request-production-approval:
     name: 'Request Production Approval'
@@ -212,15 +212,15 @@ jobs:
             title: `Production Deployment Approval Required - ${context.sha.substring(0, 7)}`,
             body: `## Production Deployment Request
           
-          **Staging Environment**: ✅ Tests Passed
+          **Staging Environment**: [PASS] Tests Passed
           **Commit**: ${context.sha}
           **Branch**: ${context.ref}
           **Triggered by**: ${context.actor}
           
           ### Staging Test Results
-          - ✅ Infrastructure deployed successfully
-          - ✅ Security scans completed
-          - ✅ Firewall verification passed
+          - [PASS] Infrastructure deployed successfully
+          - [PASS] Security scans completed
+          - [PASS] Firewall verification passed
           
           **Ready for production deployment.**
           
