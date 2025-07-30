@@ -23,6 +23,7 @@ permissions:
 jobs:
 # 1 ────────────────── Deploy infra & config ───────────────────────────────────
   deploy:
+    name: 'Deploy Infrastructure & Configuration'
     runs-on: ubuntu-latest
     environment: development
 
@@ -136,6 +137,8 @@ jobs:
             echo "Waiting for SSH... (attempt $i/20)"
             sleep 30
           done
+
+       
 
       - name: Run Ansible Playbook
         run: |
