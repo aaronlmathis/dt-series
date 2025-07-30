@@ -113,6 +113,8 @@ def test_log_analysis():
         "I/O error, dev sr0",               # harmless optical‑drive reads
         "Buffer I/O error on dev sr0",
         "execve (/bin/true"                 # dhclient workaround
+        "kex_protocol_error",               # harmless aborted SSH handshakes
+        "kex_exchange_identification",      # same – banner/ID issues
     )
     noisy_errors = [l for l in raw if not any(k in l for k in benign_keys)]
 
