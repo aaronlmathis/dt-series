@@ -8,6 +8,7 @@ on:
       - 'configuration-management/**'
       - 'environments/**'
 
+# ── global defaults ───────────────────────────────────────────────────────────
 env:
   ARM_USE_OIDC: true
   ARM_USE_CLI: false
@@ -17,8 +18,9 @@ permissions:
   id-token: write
   contents: read
   pull-requests: write
-
+# ──────────────────────────────────────────────────────────────────────────────
 jobs:
+  # 1 ────────────────── Lint & static validation ────────────────────────────────
   lint-validate:
     name: 'Lint and Validate'
     runs-on: ubuntu-latest
@@ -30,7 +32,7 @@ jobs:
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
       with:
-        terraform_version: 1.5.7
+        terraform_version: 1.12.2
 
     - name: Setup Python
       uses: actions/setup-python@v4
@@ -91,11 +93,16 @@ jobs:
         
         ansible-playbook --syntax-check site.yml -i temp_inventory/hosts.yml
 
+  # 2 ────────────────── Terraform plan against Dev backend ──────────────────────
   terraform-plan:
     name: 'Terraform Plan (Dev)'
     runs-on: ubuntu-latest
     needs: lint-validate
-    
+    env:                                   
+      ARM_CLIENT_ID:       ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID:       ${{ secrets.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
     steps:
     - name: Checkout
       uses: actions/checkout@v4
@@ -103,14 +110,14 @@ jobs:
     - name: Azure Login via OIDC
       uses: azure/login@v1
       with:
-        client-id: ${{ secrets.AZURE_CLIENT_ID }}
-        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        client-id:       ${{ env.ARM_CLIENT_ID }}
+        tenant-id:       ${{ env.ARM_TENANT_ID }}
+        subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
 
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
       with:
-        terraform_version: 1.5.7
+        terraform_version: 1.12.2
 
     - name: Setup SSH Keys
       run: |
@@ -125,28 +132,13 @@ jobs:
         cp environments/${{ env.ENVIRONMENT }}/terraform.tfvars provisioning/
         cp environments/${{ env.ENVIRONMENT }}/backend.tf provisioning/
 
-    - name: Terraform Init
+    - name: Terraform Init + Plan
       run: |
         cd provisioning
         terraform init
-      env:
-        ARM_USE_OIDC: true
-        ARM_USE_CLI: false
-        ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-        ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-        ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-
-    - name: Terraform Plan
-      run: |
-        cd provisioning
         terraform plan -var-file=terraform.tfvars
-      env:
-        ARM_USE_OIDC: true
-        ARM_USE_CLI: false
-        ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-        ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-        ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
 
+  # 3 ────────────────── Ansible dry‑run (check mode) ────────────────────────────
   ansible-check:
     name: 'Ansible Check Mode'
     runs-on: ubuntu-latest
@@ -191,7 +183,7 @@ jobs:
         cp ../environments/dev/ansible_vars.yml group_vars/azure_vms.yml
         ansible-playbook -i inventory/hosts.yml site.yml --check --diff
       continue-on-error: true
-
+  # 4 ────────────────── Python integration tests (local) ────────────────────────
   integration-tests:
     name: 'Integration Tests'
     runs-on: ubuntu-latest

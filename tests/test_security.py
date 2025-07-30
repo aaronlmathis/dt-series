@@ -222,6 +222,5 @@ def test_cron_security(vm_connection):
             assert not (file_obj.mode & 0o022), f"{cron_file} should not be group/world writable"
 
 
-
 if __name__ == "__main__":
     pytest.main([__file__])
