@@ -191,7 +191,7 @@ jobs:
     - name: Run security tests
       run: |
         cd tests
-        python -m pytest test_security.py -v --env=staging
+        python -m pytest test_security.py -v 
 
     - name: Additional security verification
       run: |
