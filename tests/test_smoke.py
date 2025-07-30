@@ -1,10 +1,6 @@
 """
 Basic smoke tests for deployment validation
 """
-import pytest
-import subprocess
-import sys
-import os
 
 from pathlib import Path
 import os
