@@ -8,6 +8,8 @@ on:
       - 'configuration-management/**'
       - 'environments/dev/**'
 
+  workflow_dispatch:
+    
 env:
   ARM_USE_OIDC: true
   ARM_USE_CLI: false
@@ -160,9 +162,8 @@ jobs:
     needs: deploy
 
     env:
-      PUBLIC_IP_ADDRESS: ${{ needs.deploy.outputs.vm_ip }}   # 👈 hand‑off
+      PUBLIC_IP_ADDRESS: ${{ needs.deploy.outputs.vm_ip }}   
       SSH_USER: azureuser
-      SSH_KEY:  $HOME/.ssh/id_rsa
 
     steps:
     - name: Checkout

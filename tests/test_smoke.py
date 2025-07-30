@@ -70,10 +70,10 @@ def ssh_exec(remote_cmd: str) -> subprocess.CompletedProcess:
 def test_vm_connectivity():
     """VM must respond to ping."""
     ip = get_vm_ip()
-    print("[TEST] Testing VM connectivity…")
-    result = _run(["ping", "-c", "3", ip])
-    assert result.returncode == 0, f"Ping to {ip} failed:\n{result.stderr}"
-    print("[PASS] VM is reachable via ping")
+    print("[TEST] Testing VM connectivity (TCP-port 22)…")
+    result = _run(["nc", "-zvw", "5", ip, "22"])
+    assert result.returncode == 0, f"TCP port 22 unreachable on {ip}"
+    print("[PASS] VM is reachable")
 
 
 def test_ssh_connectivity():
@@ -91,7 +91,7 @@ def test_ssh_connectivity():
 def test_required_services():
     """Expected services must be active."""
     print("[TEST] Testing required services…")
-    required = ["sshd", "fail2ban", "chronyd", "firewalld"]
+    required = ["sshd", "fail2ban", "chronyd", "ufw"]
     for svc in required:
         result = ssh_exec(f"systemctl is-active {svc}")
         assert result.returncode == 0 and result.stdout.strip() == "active", (
