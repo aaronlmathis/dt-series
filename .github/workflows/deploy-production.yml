@@ -31,7 +31,11 @@ jobs:
     needs: manual-approval
     environment: 
       name: production
-    
+
+    outputs:
+      vm_ip:   ${{ steps.terraform-outputs.outputs.vm_ip }}
+      vm_name: ${{ steps.terraform-outputs.outputs.vm_name }}
+
     steps:
     - name: Checkout
       uses: actions/checkout@v4
@@ -167,7 +171,12 @@ jobs:
     name: 'Health Checks & Security Verification'
     runs-on: ubuntu-latest
     needs: deploy
-    
+
+    env:
+      VM_IP: ${{ needs.deploy.outputs.vm_ip }}
+      VM_NAME: ${{ needs.deploy.outputs.vm_name }}
+      ENVIRONMENT: production
+
     steps:
     - name: Checkout
       uses: actions/checkout@v4
@@ -199,10 +208,10 @@ jobs:
 
     - name: Production validation summary
       run: |
-        echo "✅ Production health checks completed"
-        echo "✅ Security verification passed"
-        echo "✅ Performance baselines met"
-        echo "✅ Compliance checks successful"
+        echo "[PASS] Production health checks completed"
+        echo "[PASS] Security verification passed"
+        echo "[PASS] Performance baselines met"
+        echo "[PASS] Compliance checks successful"
 
   notify-deployment:
     name: 'Notify Deployment Status'
