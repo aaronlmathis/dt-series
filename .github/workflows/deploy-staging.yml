@@ -32,6 +32,10 @@ jobs:
     needs: check-dev-success
     environment: 
       name: staging
+
+    outputs:
+      vm_ip: ${{ steps.terraform-outputs.outputs.vm_ip }}
+      vm_name: ${{ steps.terraform-outputs.outputs.vm_name }}
     
     steps:
     - name: Checkout
