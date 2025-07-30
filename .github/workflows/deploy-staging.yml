@@ -47,8 +47,11 @@ jobs:
       vm_name: ${{ steps.terraform-outputs.outputs.vm_name }}
     
     steps:
-    - name: Checkout
+    - name: Checkout code from the Dev run
       uses: actions/checkout@v4
+      with:
+        # pulls the exact commit SHA that kicked off Deploy to Development
+        ref: ${{ github.event.workflow_run.head_sha }}
 
     - name: Azure Login via OIDC
       uses: azure/login@v1
