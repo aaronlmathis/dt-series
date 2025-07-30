@@ -221,10 +221,6 @@ def test_cron_security(vm_connection):
             assert file_obj.user == "root", f"{cron_file} should be owned by root"
             assert not (file_obj.mode & 0o022), f"{cron_file} should not be group/world writable"
 
-def pytest_addoption(parser):
-    """Add command line option for environment"""
-    parser.addoption("--env", action="store", default="dev", 
-                     help="Environment to test: dev, staging, production")
 
 if __name__ == "__main__":
     pytest.main([__file__])

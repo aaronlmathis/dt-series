@@ -169,8 +169,11 @@ jobs:
     needs: deploy
     
     steps:
-    - name: Checkout
+    - name: Checkout code from the Dev run
       uses: actions/checkout@v4
+      with:
+        # pulls the exact commit SHA that kicked off Deploy to Development
+        ref: ${{ github.event.workflow_run.head_sha }}
 
     - name: Setup Python
       uses: actions/setup-python@v4
@@ -190,7 +193,7 @@ jobs:
     - name: Run security tests
       run: |
         cd tests
-        python -m pytest test_security.py -v --env=staging
+        python -m pytest test_security.py -v 
 
     - name: Additional security verification
       run: |
