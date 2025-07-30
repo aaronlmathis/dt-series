@@ -1,6 +1,11 @@
 name: Deploy to Production
 
 on:
+  # automatic trigger when an approval issue is closed
+  issues:
+    types: [closed]
+
+  # manual “Run workflow” fallback
   workflow_dispatch:
 
 env:
@@ -17,18 +22,27 @@ permissions:
 jobs:
 # 1 ────────────────── Manual gate (environment‑level approval) ───────────────
   manual-approval:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment:
-      name: production           # GitHub Environment → reviewers
+      name: production         # GitHub Environment → reviewers
     steps:
       - run: echo "Waiting for manual approval…"
 
 # 2 ────────────────── Deploy infrastructure & config ─────────────────────────
   deploy:
-    name: 'Deploy Infrastructure & Configuration'
-    needs: manual-approval
+    name: Deploy Infrastructure & Configuration
+    needs: [manual-approval]   # skipped job is okay when event ≠ workflow_dispatch
     runs-on: ubuntu-latest
     environment: production
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'issues' &&
+        github.event.action == 'closed' &&
+        contains(join(github.event.issue.labels.*.name, ','), 'production') &&
+        contains(join(github.event.issue.labels.*.name, ','), 'approval-required')
+      )
 
     env:
       ARM_CLIENT_ID:       ${{ secrets.AZURE_CLIENT_ID }}
