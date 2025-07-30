@@ -1,153 +1,147 @@
-name: 'Deploy to Development'
+name: Deploy to Development
 
 on:
   push:
-    branches: [ develop ]
+    branches: [develop]
     paths:
       - 'provisioning/**'
       - 'configuration-management/**'
       - 'environments/dev/**'
-
   workflow_dispatch:
-    
+
+# ── global defaults ───────────────────────────────────────────────────────────
 env:
   ARM_USE_OIDC: true
-  ARM_USE_CLI: false
-  ENVIRONMENT: 'dev'
+  ARM_USE_CLI:  false
+  ENVIRONMENT:  dev                    # used for env‑specific files
 
 permissions:
   id-token: write
   contents: read
 
+# ──────────────────────────────────────────────────────────────────────────────
 jobs:
+# 1 ────────────────── Deploy infra & config ───────────────────────────────────
   deploy:
-    name: 'Deploy Infrastructure & Configuration'
     runs-on: ubuntu-latest
-    environment: 
-      name: development
-    
-    outputs:
-      vm_ip: ${{ steps.terraform-outputs.outputs.vm_ip }}
-      vm_name: ${{ steps.terraform-outputs.outputs.vm_name }}
+    environment: development
 
-    env: 
-      ARM_USE_OIDC: true
-      ARM_USE_CLI: false
-      ARM_CLIENT_ID:      ${{ secrets.AZURE_CLIENT_ID }}
-      ARM_TENANT_ID:      ${{ secrets.AZURE_TENANT_ID }}
+    env:                               # ARM vars once per job
+      ARM_CLIENT_ID:       ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID:       ${{ secrets.AZURE_TENANT_ID }}
       ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      ENVIRONMENT: dev
+
+    outputs:
+      vm_ip:   ${{ steps.tf_out.outputs.vm_ip }}
+      vm_name: ${{ steps.tf_out.outputs.vm_name }}
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0               # full history for tf/ansible versioning
 
-    - name: Azure Login via OIDC
-      uses: azure/login@v1
-      with:
-        client-id: ${{ secrets.AZURE_CLIENT_ID }}
-        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Azure login (OIDC)
+        uses: azure/login@v1
+        with:
+          client-id:       ${{ env.ARM_CLIENT_ID }}
+          tenant-id:       ${{ env.ARM_TENANT_ID }}
+          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
 
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v3
-      with:
-        terraform_version: 1.5.7
+      # Toolchain
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.12.2
 
-    - name: Setup Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
 
-    - name: Install Ansible
-      run: |
-        python -m pip install --upgrade pip
-        pip install ansible
+      - run: |
+          python -m pip install --upgrade pip
+          pip install ansible
+        name: Install Ansible
 
-    # Terraform Deploy
-    - name: Setup SSH Keys
-      run: |
-        mkdir -p ~/.ssh provisioning/keys
-        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-        chmod 600 ~/.ssh/id_rsa
-        # Generate public key from private key
-        ssh-keygen -y -f ~/.ssh/id_rsa > provisioning/keys/id_rsa.pub
+      # SSH key for both Terraform (pub key) and Ansible/Smoke
+      - name: Prepare SSH key
+        run: |
+          mkdir -p ~/.ssh provisioning/keys
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keygen -y -f ~/.ssh/id_rsa > provisioning/keys/id_rsa.pub
 
-    - name: Copy environment configuration
-      run: |
-        cp environments/${{ env.ENVIRONMENT }}/terraform.tfvars provisioning/
-        cp environments/${{ env.ENVIRONMENT }}/backend.tf provisioning/
+      # ── Terraform ──────────────────────────────────────────────────────────
+      - name: Copy environment files
+        run: |
+          cp environments/${{ env.ENVIRONMENT }}/terraform.tfvars provisioning/
+          cp environments/${{ env.ENVIRONMENT }}/backend.tf      provisioning/
 
-    - name: Terraform Init
-      run: |
-        cd provisioning
-        terraform init
+      - name: Terraform init ▪ plan ▪ apply
+        run: |
+          cd provisioning
+          terraform init
+          terraform plan  -var-file=terraform.tfvars
+          terraform apply -auto-approve -var-file=terraform.tfvars
 
+      - name: Capture TF outputs
+        id: tf_out
+        run: |
+          cd provisioning
+          echo "vm_ip=$(terraform output -raw public_ip_address)" >> "$GITHUB_OUTPUT"
+          echo "vm_name=$(terraform output -raw vm_name)"         >> "$GITHUB_OUTPUT"
 
-    - name: Terraform Apply
-      run: |
-        cd provisioning
-        terraform apply -auto-approve -var-file=terraform.tfvars
+      # ── Ansible ────────────────────────────────────────────────────────────
+      - name: Create Ansible inventory
+        run: |
+          mkdir -p configuration-management/inventory
+          cat > configuration-management/inventory/hosts.yml << EOF
+          all:
+            children:
+              azure_vms:
+                hosts:
+                  ${{ steps.tf_out.outputs.vm_name }}:
+                    ansible_host: ${{ steps.tf_out.outputs.vm_ip }}
+                    ansible_user: azureuser
+                    ansible_ssh_private_key_file: ~/.ssh/id_rsa
+                    ansible_python_interpreter: /usr/bin/python3
+                vars:
+                  ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+                  environment_name: "${{ env.ENVIRONMENT }}"
+          EOF
 
+        env:
+          VM_IP:        ${{ steps.tf_out.outputs.vm_ip }}
+          VM_NAME:      ${{ steps.tf_out.outputs.vm_name }}
+          ENVIRONMENT:  ${{ env.ENVIRONMENT }}
 
-    - name: Get Terraform Outputs
-      id: terraform-outputs
-      run: |
-        cd provisioning
-        echo "vm_ip=$(terraform output -raw public_ip_address)" >> $GITHUB_OUTPUT
-        echo "vm_name=$(terraform output -raw vm_name)" >> $GITHUB_OUTPUT
+      - name: Copy environment variables
+        run: |
+          cp environments/${{ env.ENVIRONMENT }}/ansible_vars.yml configuration-management/group_vars/azure_vms.yml
 
-    # Ansible Deploy
-    - name: Create Ansible inventory
-      run: |
-        mkdir -p configuration-management/inventory
-        cat > configuration-management/inventory/hosts.yml << EOF
-        all:
-          children:
-            azure_vms:
-              hosts:
-                ${{ steps.terraform-outputs.outputs.vm_name }}:
-                  ansible_host: ${{ steps.terraform-outputs.outputs.vm_ip }}
-                  ansible_user: azureuser
-                  ansible_ssh_private_key_file: ~/.ssh/id_rsa
-                  ansible_python_interpreter: /usr/bin/python3
-              vars:
-                ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
-                environment_name: "${{ env.ENVIRONMENT }}"
-        EOF
+      - name: Install Ansible collections
+        run: |
+          cd configuration-management
+          ansible-galaxy collection install -r requirements.yml
 
-    - name: Copy environment variables
-      run: |
-        cp environments/${{ env.ENVIRONMENT }}/ansible_vars.yml configuration-management/group_vars/azure_vms.yml
+      - name: Wait for SSH to be ready
+        run: |
+          for i in {1..20}; do
+            if ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o BatchMode=yes azureuser@${{ steps.tf_out.outputs.vm_ip }} 'echo "SSH is ready"'; then
+              echo "[SUCCESS] VM is accessible via SSH"
+              break
+            fi
+            if [ $i -eq 20 ]; then
+              echo "[FAIL] VM not ready after 10 minutes"
+              exit 1
+            fi
+            echo "Waiting for SSH... (attempt $i/20)"
+            sleep 30
+          done
 
-    - name: Install Ansible collections
-      run: |
-        cd configuration-management
-        ansible-galaxy collection install -r requirements.yml
-
-    - name: Wait for SSH to be ready
-      run: |
-        for i in {1..20}; do
-          if ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o BatchMode=yes azureuser@${{ steps.terraform-outputs.outputs.vm_ip }} 'echo "SSH is ready"'; then
-            echo "[SUCCESS] VM is accessible via SSH"
-            break
-          fi
-          if [ $i -eq 20 ]; then
-            echo "[FAIL] VM not ready after 10 minutes"
-            exit 1
-          fi
-          echo "Waiting for SSH... (attempt $i/20)"
-          sleep 30
-        done
-
-    - name: Bootstrap Python on VM
-      run: ansible all -i configuration-management/inventory/hosts.yml -m raw -a "cloud-init status --wait && sudo apt-get update && sudo apt-get install -y python3-pip"
-
-    - name: Run Ansible Playbook
-      run: |
-        cd configuration-management
-        ansible-playbook -i inventory/hosts.yml site.yml -v
-
+      - name: Run Ansible Playbook
+        run: |
+          cd configuration-management
+          ansible-playbook -i inventory/hosts.yml site.yml -v
+# 2 ────────────────── Smoke tests ─────────────────────────────────────────────
   smoke-tests:
     name: 'Smoke Tests'
     runs-on: ubuntu-latest

@@ -7,17 +7,20 @@ on:
       - completed
   workflow_dispatch:
 
+# ── global defaults ───────────────────────────────────────────────────────────
 env:
   ARM_USE_OIDC: true
-  ARM_USE_CLI: false
-  ENVIRONMENT: 'staging'
+  ARM_USE_CLI:  false
+  ENVIRONMENT:  staging
 
 permissions:
   id-token: write
   contents: read
   issues: write
 
+# ──────────────────────────────────────────────────────────────────────────────
 jobs:
+# 0 ───────────── Confirm Dev succeeded (skipped for manual dispatch) ──────────
   check-dev-success:
     name: 'Check Dev Deployment Success'
     runs-on: ubuntu-latest
@@ -27,21 +30,17 @@ jobs:
     - name: Dev deployment successful
       run: echo "Development deployment completed successfully, proceeding to staging"
 
+# 1 ────────────────── Deploy infra & config to staging ────────────────────────
   deploy:
     name: 'Deploy Infrastructure & Configuration'
     runs-on: ubuntu-latest
     needs: check-dev-success
+    environment: staging
 
-    env:                   
-      ARM_USE_OIDC: true
-      ARM_USE_CLI: false
-      ARM_CLIENT_ID:      ${{ secrets.AZURE_CLIENT_ID }}
-      ARM_TENANT_ID:      ${{ secrets.AZURE_TENANT_ID }}
+    env:                             
+      ARM_CLIENT_ID:       ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID:       ${{ secrets.AZURE_TENANT_ID }}
       ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      ENVIRONMENT: staging
-
-    environment: 
-      name: staging
 
     outputs:
       vm_ip: ${{ steps.terraform-outputs.outputs.vm_ip }}
@@ -57,14 +56,14 @@ jobs:
     - name: Azure Login via OIDC
       uses: azure/login@v1
       with:
-        client-id: ${{ secrets.AZURE_CLIENT_ID }}
-        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        client-id:       ${{ env.ARM_CLIENT_ID }}
+        tenant-id:       ${{ env.ARM_TENANT_ID }}
+        subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
 
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
       with:
-        terraform_version: 1.5.7
+        terraform_version: 1.12.2
 
     - name: Setup Python
       uses: actions/setup-python@v4
@@ -84,7 +83,7 @@ jobs:
         # Generate public key from private key
         ssh-keygen -y -f ~/.ssh/id_rsa > provisioning/keys/id_rsa.pub
 
-    # Terraform Deploy
+    # ── Terraform ──────────────────────────────────────────────────────────
     - name: Copy environment configuration
       run: |
         cp environments/${{ env.ENVIRONMENT }}/terraform.tfvars provisioning/
@@ -94,16 +93,7 @@ jobs:
       run: |
         cd provisioning
         terraform init
-
-
-    - name: Terraform Plan
-      run: |
-        cd provisioning
         terraform plan -var-file=terraform.tfvars
-
-    - name: Terraform Apply
-      run: |
-        cd provisioning
         terraform apply -auto-approve -var-file=terraform.tfvars
 
     - name: Get Terraform Outputs
@@ -113,7 +103,7 @@ jobs:
         echo "vm_ip=$(terraform output -raw public_ip_address)" >> $GITHUB_OUTPUT
         echo "vm_name=$(terraform output -raw vm_name)" >> $GITHUB_OUTPUT
 
-    # Ansible Deploy
+    # ── Ansible ────────────────────────────────────────────────────────────
     - name: Create Ansible inventory
       run: |
         mkdir -p configuration-management/inventory
@@ -132,7 +122,12 @@ jobs:
                 environment_name: "${{ env.ENVIRONMENT }}"
         EOF
 
-    - name: Copy environment variables
+      env:
+        VM_IP:        ${{ steps.tf_out.outputs.vm_ip }}
+        VM_NAME:      ${{ steps.tf_out.outputs.vm_name }}
+        ENVIRONMENT:  ${{ env.ENVIRONMENT }}
+
+    - name: Copy group variables
       run: |
         cp environments/${{ env.ENVIRONMENT }}/ansible_vars.yml configuration-management/group_vars/azure_vms.yml
 
@@ -156,19 +151,21 @@ jobs:
           sleep 30
         done
 
-    - name: Bootstrap Python on VM
-      run: ansible all -i configuration-management/inventory/hosts.yml -m raw -a "cloud-init status --wait && sudo apt-get update && sudo apt-get install -y python3-pip"
-
     - name: Run Ansible Playbook
       run: |
         cd configuration-management
         ansible-playbook -i inventory/hosts.yml site.yml -v
 
+# 2 ────────────────── Security & firewall tests ──────────────────────────────
   security-tests:
     name: 'Security & Firewall Tests'
     runs-on: ubuntu-latest
     needs: deploy
-    
+    env:
+      VM_IP:   ${{ needs.deploy.outputs.vm_ip }}
+      VM_NAME: ${{ needs.deploy.outputs.vm_name }}
+      ENVIRONMENT: staging
+
     steps:
     - name: Checkout code from the Dev run
       uses: actions/checkout@v4
@@ -202,7 +199,8 @@ jobs:
         echo "[PASS] Firewall rules verified"
         echo "[PASS] Access controls validated"
         echo "[PASS] Vulnerability assessment passed"
-
+        
+# 3 ────────────────── Create production‑approval issue ───────────────────────
   request-production-approval:
     name: 'Request Production Approval'
     runs-on: ubuntu-latest
