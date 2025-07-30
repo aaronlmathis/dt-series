@@ -5,7 +5,11 @@ on:
     workflows: ["Deploy to Staging"]
     types: [completed]
 
-  workflow_dispatch:                  # manual fallback
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'The branch or commit SHA to deploy to production'
+        required: true
 
 env:
   ARM_USE_OIDC: true
@@ -39,6 +43,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Use the dispatch input if available, otherwise use the SHA from the completed staging run
+          ref: ${{ github.event.inputs.ref || github.event.workflow_run.head_sha }}
 
       - name: Azure login (OIDC)
         uses: azure/login@v1

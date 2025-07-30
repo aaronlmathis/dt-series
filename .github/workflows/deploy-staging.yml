@@ -6,6 +6,11 @@ on:
     types:
       - completed
   workflow_dispatch:
+    inputs:
+      ref:
+        description: 'The branch or commit SHA to deploy to staging'
+        required: true
+        default: 'develop'
 
 # ── global defaults ───────────────────────────────────────────────────────────
 env:
@@ -49,8 +54,8 @@ jobs:
     - name: Checkout code from the Dev run
       uses: actions/checkout@v4
       with:
-        # pulls the exact commit SHA that kicked off Deploy to Development
-        ref: ${{ github.event.workflow_run.head_sha }}
+        # pulls the exact commit SHA that kicked off Deploy to Development
+        ref: ${{ github.event.inputs.ref || github.event.workflow_run.head_sha }}
 
     - name: Azure Login via OIDC
       uses: azure/login@v1
@@ -122,8 +127,8 @@ jobs:
         EOF
 
       env:
-        VM_IP:        ${{ steps.tf_out.outputs.vm_ip }}
-        VM_NAME:      ${{ steps.tf_out.outputs.vm_name }}
+        VM_IP:        ${{ steps.terraform-outputs.outputs.vm_ip }}
+        VM_NAME:      ${{ steps.terraform-outputs.outputs.vm_name }}
         ENVIRONMENT:  ${{ env.ENVIRONMENT }}
 
     - name: Copy group variables
