@@ -19,19 +19,14 @@ permissions:
 
 # ──────────────────────────────────────────────────────────────────────────────
 jobs:
-# 1 ────────────────── Manual gate (environment‑level approval) ───────────────
-  manual-approval:
+# 1 ────────────────── Deploy infrastructure & config ─────────────────────────
+  deploy:
+    name: Deploy Infrastructure & Configuration
+    if: github.event_name == 'workflow_dispatch' ||
+        github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     environment:
-      name: production           # GitHub Environment → reviewers
-    steps:
-      - run: echo "Waiting for manual approval…"
-
-# 2 ────────────────── Deploy infrastructure & config ─────────────────────────
-  deploy:
-    needs: manual-approval
-    runs-on: ubuntu-latest
-    environment: production
+      name: production         # ← reviewers gate lives here
 
     env:
       ARM_CLIENT_ID:       ${{ secrets.AZURE_CLIENT_ID }}
