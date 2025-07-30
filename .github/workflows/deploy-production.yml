@@ -199,7 +199,7 @@ jobs:
       with:
         script: |
           const deploymentStatus = '${{ needs.health-checks.result }}';
-          const emoji = deploymentStatus === 'success' ? '🚀' : '🚨';
+          const emoji = deploymentStatus === 'success' ? '[SUCCESS]' : '[FAILURE]';
           const status = deploymentStatus === 'success' ? 'successful' : 'failed';
           
           const message = `${emoji} Production deployment ${status}!
